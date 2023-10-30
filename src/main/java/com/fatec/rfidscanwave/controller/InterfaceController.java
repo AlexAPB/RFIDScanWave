@@ -2,8 +2,8 @@ package com.fatec.rfidscanwave.controller;
 
 import com.fatec.rfidscanwave.ScanWave;
 import com.fatec.rfidscanwave.db.ScanWaveDB;
-import com.fatec.rfidscanwave.model.Clock;
-import com.fatec.rfidscanwave.model.ClockDay;
+import com.fatec.rfidscanwave.model.clock.ClockModel;
+import com.fatec.rfidscanwave.model.clock.ClockDayModel;
 import com.fatec.rfidscanwave.model.EmployeeModel;
 import com.fatec.rfidscanwave.util.ImageUtil;
 import com.fatec.rfidscanwave.util.InterfaceCommand;
@@ -24,13 +24,14 @@ import javafx.scene.shape.Circle;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-import static com.fatec.rfidscanwave.model.Clock.ClockState.CLOCK_IN;
-import static com.fatec.rfidscanwave.model.Clock.ClockState.CLOCK_OUT;
+import static com.fatec.rfidscanwave.model.clock.ClockModel.ClockState.CLOCK_IN;
+import static com.fatec.rfidscanwave.model.clock.ClockModel.ClockState.CLOCK_OUT;
 
 public class InterfaceController {
     private ScanWaveView parent;
@@ -77,7 +78,7 @@ public class InterfaceController {
         interfaceCommand = null;
     }
 
-    public void action(int id, InterfaceCommand.Command command){
+    public void action(int id, EmployeeModel employee, InterfaceCommand.Command command){
         Transition transition = null;
         boolean resetImage = false;
 
@@ -90,7 +91,7 @@ public class InterfaceController {
                             @Override
                             public void handle(ActionEvent event) {
                                 displayUser(true);
-                                loadUserInformation(id, db.getLastClockDay(id));
+                                loadUserInformation(id, employee.getClockList().get(employee.getClockList().size() - 1));
                             }
                         }
                 );
@@ -100,13 +101,32 @@ public class InterfaceController {
             }
             case CANT_WORK -> {
                 name.setText("Impossível bater ponto!");
-                career.setText("É necessário um tempo de " + db.getMinToWork(db.getWorkdayDuration(id)) + " horas entre suas jornadas de trabalho!");
-                clockOut.setText("Último ponto: " + db.getLastClock(id).getClock().format(DateTimeFormatter.ofPattern("dd/MM HH:mm")));
+                career.setText("É necessário um tempo de 11 horas entre suas jornadas de trabalho!");
+                clockOut.setText(
+                        "Último ponto: " +
+                                employee.getClockList()
+                                        .get(employee.getClockList().size() - 1)
+                                        .getClockOut().getDate().format(DateTimeFormatter.ofPattern("dd/MM")) +
+                                " " +
+                                employee.getClockList()
+                                        .get(employee.getClockList().size() - 1)
+                                        .getClockOut().getTime().format(DateTimeFormatter.ofPattern("HH:mm"))
+                        );
                 transition = new ClockAnimation().cantWork(name,career, clockOut, clockBox);
             }
             case ALREADY_CLOCKED -> {
                 parent.getRFID().prepareCommand(id, RFIDCommand.Command.CLOCK_OUT);
-                name.setText("Você já bateu o ponto há " + TimeUtil.getTimeFromSeconds(db.getLastClockDifferenceInSeconds(id)) + "!");
+                name.setText(
+                        "Você já bateu o ponto há " +
+                                TimeUtil.getTimeFromSeconds(
+                                        (int) Math.abs(
+                                                java.time.Duration.between(
+                                                        LocalDateTime.now(),
+                                                        LocalDateTime.of(employee.getClockList().get(0).getLastClock().getDate(), employee.getClockList().get(0).getLastClock().getTime())
+
+                                                ).toSeconds()))
+                                + "!"
+                );
                 career.setText("Passe o cartão mais " + parent.getRFID().getRfidCommand().remainTimes() + "x para encerrar forçadamente o seu turno!");
 
                 transition = new ClockAnimation().alreadyClocked(name,career);
@@ -115,14 +135,33 @@ public class InterfaceController {
                 if(parent.getRFID().getRfidCommand().remainTimes() > 0) {
                     career.setText("Passe o cartão mais " + parent.getRFID().getRfidCommand().remainTimes() + "x para encerrar forçadamente o seu turno!");
                 } else {
-                    db.clock(parent.getRFID().getRfidCommand().getId());
                     name.setText("Turno encerrado!");
-                    loadClockInformation(db.getLastClockDay(parent.getRFID().getRfidCommand().getId()));
+                    loadClockInformation(employee.getClockList().get(employee.getClockList().size() - 1));
                     displayForAlreadyClock();
                     parent.getRFID().finishCommand();
 
                     transition = new ClockAnimation().forceClockOut();
                 }
+            }
+            case LUNCH_OUT -> {
+                name.setText("Tenha um bom almoço!");
+                career.setText("");
+                transition = new ClockAnimation().alreadyClocked(name, career);
+            }
+            case LUNCH_RETURN -> {
+                name.setText("Teve uma boa pausa?");
+                career.setText("");
+                transition = new ClockAnimation().alreadyClocked(name, career);
+            }
+            case IN_OFF_DUTY -> {
+                name.setText("É sua folga, o que está fazendo aqui?");
+                career.setText("");
+                transition = new ClockAnimation().alreadyClocked(name, career);
+            }
+            case ALREADY_WORKED -> {
+                name.setText("Infelizmente, você não pode trabalhar!");
+                career.setText("A CLT estabelece que o intervalo mínimo entre duas jornadas de trabalho é de 11 horas consecutivas.");
+                transition = new ClockAnimation().alreadyClocked(name, career);
             }
         }
 
@@ -141,7 +180,6 @@ public class InterfaceController {
             transition.play();
         }
     }
-
 
     private void displayUser(boolean display) {
         name.setVisible(display);
@@ -195,13 +233,13 @@ public class InterfaceController {
         }
     }
 
-    private void loadUserInformation(int id, ClockDay clockDay){
+    private void loadUserInformation(int id, ClockDayModel clockDayModel){
         EmployeeModel employee = db.getEmployee(id);
         name.setText(employee.getName());
         career.setText(employee.getCareer());
-        message.setText(Clock.ClockState.getGreetings(clockDay.getClockOut() == null ? CLOCK_IN : CLOCK_OUT));
+        message.setText(ClockModel.ClockState.getGreetings(clockDayModel.getClockOut() == null ? CLOCK_IN : CLOCK_OUT));
 
-        loadClockInformation(clockDay);
+        loadClockInformation(clockDayModel);
 
         Image user = db.getUserImageById(id);
         if(user != null) {
@@ -214,11 +252,11 @@ public class InterfaceController {
         }
     }
 
-    private void loadClockInformation(ClockDay clockDay){
-        clockIn.setText("Início: " + clockDay.getClockIn().clockToHourMinute());
-        if(clockDay.getClockIn() != null && clockDay.getClockOut() != null) {
-            clockOut.setText("Término: " + clockDay.getClockOut().clockToHourMinute());
-            workedHours.setText("Tempo trabalhado: " + clockDay.difference());
+    private void loadClockInformation(ClockDayModel clockDayModel){
+        clockIn.setText("Início: " + clockDayModel.getClockIn().clockToHourMinute());
+        if(clockDayModel.getClockIn() != null && clockDayModel.getClockOut() != null) {
+            clockOut.setText("Término: " + clockDayModel.getClockOut().clockToHourMinute());
+            workedHours.setText("Tempo trabalhado: " + clockDayModel.difference());
         }
     }
 

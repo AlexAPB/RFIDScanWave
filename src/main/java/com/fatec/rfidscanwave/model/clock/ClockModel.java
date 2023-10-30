@@ -1,50 +1,63 @@
-package com.fatec.rfidscanwave.model;
+package com.fatec.rfidscanwave.model.clock;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.Random;
 
-public class Clock {
-    private LocalDateTime clock;
+public class ClockModel {
+    private LocalDate date;
+    private LocalTime time;
     private ClockState state;
-    public Clock(){
+    public ClockModel(){
 
     }
 
-    public Clock(LocalDateTime clock){
-        this.clock = clock;
+    public ClockModel(LocalDate date, LocalTime time){
+        this.date = date;
+        this.time = time;
     }
 
-    public Clock(LocalDateTime clock, ClockState state){
-        this.clock = clock;
+    public ClockModel(LocalDate date, LocalTime time, ClockState state){
+        this.date = date;
+        this.time = time;
         this.state = state;
     }
 
     public String clockToHourMinute(){
         StringBuffer str = new StringBuffer();
 
-        if(clock.getHour() < 10)
+        if(time.getHour() < 10)
             str.append(0);
 
-        str.append(clock.getHour()).append(":");
+        str.append(time.getHour()).append(":");
 
-        if(clock.getMinute() < 10)
+        if(time.getMinute() < 10)
             str.append(0);
 
-        str.append(clock.getMinute());
+        str.append(time.getMinute());
 
         return str.toString();
     }
 
-    public void setClock(LocalDateTime clock) {
-        this.clock = clock;
+    public void setDate(LocalDate date) {
+        this.date = date;
+    }
+
+    public void setTime(LocalTime time) {
+        this.time = time;
     }
 
     public void setState(ClockState state) {
         this.state = state;
     }
 
-    public LocalDateTime getClock() {
-        return clock;
+    public LocalDate getDate() {
+        return date;
+    }
+
+    public LocalTime getTime() {
+        return time;
     }
 
     public ClockState getState() {
@@ -54,7 +67,10 @@ public class Clock {
     public enum ClockState {
         UNDEFINED (0),
         CLOCK_IN (1),
-        CLOCK_OUT (2);
+        LUNCH_OUT (2),
+        LUNCH_RETURN (3),
+        CLOCK_OUT (4),
+        OFF_DUTY (5);
 
         private final int state;
 
@@ -68,19 +84,37 @@ public class Clock {
 
         public static ClockState nextState(ClockState state){
             return switch (state){
-                case CLOCK_IN -> CLOCK_OUT;
+                case CLOCK_IN -> LUNCH_OUT;
+                case LUNCH_OUT -> LUNCH_RETURN;
+                case LUNCH_RETURN -> CLOCK_OUT;
                 case CLOCK_OUT, UNDEFINED -> CLOCK_IN;
+                default -> CLOCK_IN;
+            };
+        }
+
+        public ClockState getNext(){
+            return switch (this){
+                case CLOCK_IN -> LUNCH_OUT;
+                case LUNCH_OUT -> LUNCH_RETURN;
+                case LUNCH_RETURN -> CLOCK_OUT;
+                case OFF_DUTY, CLOCK_OUT, UNDEFINED -> CLOCK_IN;
             };
         }
 
         public static ClockState fromState(int state){
             switch (state){
                 case 0:
-                    return ClockState.UNDEFINED;
+                    return UNDEFINED;
                 case 1:
-                    return ClockState.CLOCK_IN;
+                    return CLOCK_IN;
                 case 2:
-                    return ClockState.CLOCK_OUT;
+                    return LUNCH_OUT;
+                case 3:
+                    return LUNCH_RETURN;
+                case 4:
+                    return CLOCK_OUT;
+                case 5:
+                    return OFF_DUTY;
                 default:
                     return null;
             }

@@ -22,6 +22,11 @@ public class InterfaceCommand {
         ALREADY_CLOCKED,
         CANT_WORK,
         FORCE_CLOCK_OUT,
-        WRONG_USER;
+        WRONG_USER,
+        LUNCH_OUT,
+        LUNCH_RETURN,
+        IN_OFF_DUTY,
+        ALREADY_WORKED,
+        OFF_PERIOD;
     }
 }

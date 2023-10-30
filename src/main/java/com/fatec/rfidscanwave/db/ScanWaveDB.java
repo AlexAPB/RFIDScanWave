@@ -1,14 +1,21 @@
 package com.fatec.rfidscanwave.db;
 
 import com.fatec.rfidscanwave.ScanWave;
-import com.fatec.rfidscanwave.model.Clock;
-import com.fatec.rfidscanwave.model.ClockDay;
+import com.fatec.rfidscanwave.model.ShiftModel;
+import com.fatec.rfidscanwave.model.clock.ClockModel;
+import com.fatec.rfidscanwave.model.clock.ClockDayModel;
 import com.fatec.rfidscanwave.model.EmployeeModel;
 import javafx.scene.image.Image;
 
 import java.sql.*;
-import java.time.*;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoField;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalField;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ScanWaveDB implements IScanWaveDB {
     private Connection db;
@@ -26,161 +33,169 @@ public class ScanWaveDB implements IScanWaveDB {
             db = DB.getConnection();
     }
 
-    public void clock(int id){
-        Clock lastClock = getLastClock(id);
-        Clock.ClockState nextState;
-        LocalDateTime time = LocalDateTime.now();
-        PreparedStatement preparedStatement = null;
+    @Override
+    public void clock(int id, EmployeeModel employee, ClockModel clock){
+        PreparedStatement insertClock = null;
 
-
-        if (lastClock != null) {
-            nextState = Clock.ClockState.nextState(lastClock.getState());
-        } else {
-            nextState = Clock.ClockState.CLOCK_IN;
-        }
+        if(clock.getState() == ClockModel.ClockState.UNDEFINED)
+            return;
 
         try {
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-            String sqlDateTime = time.format(formatter);
+            String sqlDate = clock.getDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+            String sqlTime = clock.getTime() == null ? null : clock.getTime().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
 
-            preparedStatement = db.prepareStatement(
-                    "INSERT INTO clock(id, clock_time, clock_state)" + "\n" +
-                            "VALUES ( ?, ?, ?);"
+            insertClock = db.prepareStatement(
+                    "INSERT INTO clock(employee_id, employee_shift, clock_date, clock_time, clock_state)" + "\n" +
+                            "VALUES ( ?, ?, ?, ?, ?), " +
+                            "( ?, ?, ?, ?, ?), " +
+                            "( ?, ?, ?, ?, ?), " +
+                            "( ?, ?, ?, ?, ?); "
             );
-            preparedStatement.setInt(1, id);
-            preparedStatement.setString(2, sqlDateTime);
-            preparedStatement.setInt(3, nextState.getState());
-            preparedStatement.executeUpdate();
+            insertClock.setInt(1, id);
+            insertClock.setInt(6, id);
+            insertClock.setInt(11, id);
+            insertClock.setInt(16, id);
+
+            insertClock.setInt(2, employee.getShift().getId());
+            insertClock.setInt(7, employee.getShift().getId());
+            insertClock.setInt(12, employee.getShift().getId());
+            insertClock.setInt(17, employee.getShift().getId());
+
+            insertClock.setString(3, sqlDate);
+            insertClock.setString(8, sqlDate);
+            insertClock.setString(13, sqlDate);
+            insertClock.setString(18, sqlDate);
+
+            insertClock.setString(4, sqlTime);
+            insertClock.setString(9, null);
+            insertClock.setString(14, null);
+            insertClock.setString(19, null);
+
+            insertClock.setInt(5, 1);
+            insertClock.setInt(10, 2);
+            insertClock.setInt(15, 3);
+            insertClock.setInt(20, 4);
+
+            insertClock.execute();
         } catch(Exception e){
             e.printStackTrace();
         }
     }
 
-    public Clock getLastClock(int id){
-        Clock clock = null;
-        ResultSet resultSet = null;
+    public void updateClock(int id, ClockModel clock){
+        PreparedStatement insertClock = null;
+
+        if(clock.getState() == ClockModel.ClockState.UNDEFINED)
+            return;
+
+        try {
+            String sqlDate = clock.getDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+            String sqlTime = clock.getTime() == null ? null : clock.getTime().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
+
+            insertClock = db.prepareStatement(
+                    "UPDATE clock SET clock_time = ? WHERE employee_id = ? AND clock_date = ? AND clock_state = ?;"
+            );
+            insertClock.setString(1,sqlTime);
+            insertClock.setInt(2, id);
+            insertClock.setString(3, sqlDate);
+            insertClock.setInt(4, clock.getState().getState());
+
+            insertClock.execute();
+        } catch(Exception e){
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public EmployeeModel getEmployee(int id){
         Statement statement = null;
+        ResultSet resultSet = null;
+        EmployeeModel employee = new EmployeeModel();
 
         try {
             statement = db.createStatement();
             resultSet = statement.executeQuery(
-                    "SELECT clock_time, clock_state FROM clock WHERE id=" + id + "\n" +
-                            "ORDER BY clock_time DESC LIMIT 1"
+                    "SELECT name, job_name, shifts.* FROM employees" + "\n" +
+                            "INNER JOIN jobs ON employees.job_id = jobs.id" + "\n" +
+                            "INNER JOIN shifts ON shifts.id = employees.shift_id" + "\n" +
+                            "WHERE employees.id = " + id + "\n"
             );
 
-            if(!resultSet.next()){
+            if(!resultSet.next()) {
+                employee.setClockList(new ArrayList<>());
+                employee.getClockList().add(new ClockDayModel());
                 statement.close();
                 resultSet.close();
-
-                return clock;
+                return employee;
             }
 
-            clock = new Clock();
+            employee.setId(id);
+            employee.setName(resultSet.getString("name"));
+            employee.setCareer(resultSet.getString("job_name"));
+            employee.setShift(
+                    new ShiftModel(
+                            resultSet.getInt("id"),
+                            LocalTime.parse(resultSet.getTime("clock_in").toString()),
+                            LocalTime.parse(resultSet.getTime("clock_out").toString()),
+                            LocalTime.parse(resultSet.getTime("break_duration").toString())
+                    )
+            );
+            employee.setClockList(getClockListById(employee.getId()));
 
-            clock.setClock(resultSet.getTimestamp("clock_time").toLocalDateTime());
+            statement.close();
+            resultSet.close();
 
-            int state = resultSet.getInt("clock_state");
-            clock.setState(Clock.ClockState.fromState(state));
-        } catch(Exception e){
+            return employee;
+        } catch(RuntimeException | SQLException e){
             e.printStackTrace();
-            return clock;
         }
 
-        return clock;
+        return employee;
     }
 
-    public ClockDay getLastClockDay(int id){
-        ClockDay clock = null;
+    @Override
+    public List<ClockDayModel> getClockListById(int employeeId){
         ResultSet resultSet = null;
         Statement statement = null;
+        List<ClockDayModel> clockList = new ArrayList<>();
 
         try {
-            statement = db.createStatement();
+            statement = db.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_READ_ONLY);
             resultSet = statement.executeQuery(
-                    "SELECT clock_time, clock_state FROM clock WHERE id=" + id + "\n" +
-                            "ORDER BY clock_time DESC LIMIT 2"
+                    "SELECT * FROM clock WHERE employee_id=" + employeeId + " ORDER BY clock_date DESC, clock_state DESC;"
             );
 
-            if(!resultSet.next()){
-                statement.close();
-                resultSet.close();
-
-                return clock;
+            if (!resultSet.next()) {
+                clockList.add(new ClockDayModel());
+                return clockList;
             }
 
-            clock = new ClockDay();
+            ClockDayModel clockDay = new ClockDayModel();
 
-            if(resultSet.getInt("clock_state") == Clock.ClockState.CLOCK_OUT.getState()){
-                Clock clockOut = new Clock(
-                        resultSet.getTimestamp("clock_time").toLocalDateTime(),
-                        Clock.ClockState.CLOCK_OUT
-                );
+            do {
+                int state = resultSet.getInt("clock_state");
 
-                resultSet.next();
+                if(clockDay.canSetClock(state)){
+                    if(resultSet.getTime("clock_time") != null)
+                        clockDay.setClock(resultSet.getTimestamp("clock_date"), resultSet.getTimestamp("clock_time"), state);
+                } else {
+                    resultSet.previous();
+                    clockList.add(clockDay);
+                    clockDay = new ClockDayModel();
+                }
+            } while(resultSet.next());
 
-                Clock clockIn = new Clock(
-                        resultSet.getTimestamp("clock_time").toLocalDateTime(),
-                        Clock.ClockState.CLOCK_IN
-                );
+            clockList.add(clockDay);
 
-                clock.setClockIn(clockIn);
-                clock.setClockOut(clockOut);
-            } else if(resultSet.getInt("clock_state") == Clock.ClockState.CLOCK_IN.getState()){
-                Clock clockIn = new Clock(
-                        resultSet.getTimestamp("clock_time").toLocalDateTime(),
-                        Clock.ClockState.CLOCK_IN
-                );
-
-                clock.setClockIn(clockIn);
-            }
-        } catch(Exception e){
+            resultSet.close();
+            statement.close();
+        } catch (SQLException e) {
             e.printStackTrace();
-            return clock;
+        } catch (Exception e) {
+            e.printStackTrace();
         }
 
-        return clock;
-    }
-
-
-    @Override
-    public boolean canClock(int id) {
-        Clock lastClock = getLastClock(id);
-
-        if (lastClock != null) {
-            Duration duration = Duration.between(lastClock.getClock(), LocalDateTime.now());
-
-            if(lastClock.getState() == Clock.ClockState.CLOCK_OUT) {
-                int workdayDuration = getWorkdayDuration(id);
-
-                if(workdayDuration <= 6)
-                    return true;
-                else
-                    return duration.toHours() > getMinToWork(workdayDuration);
-            } else {
-                return duration.toHours() > (getWorkdayDuration(id) * 0.8f);
-            }
-        }
-
-        return true;
-    }
-
-    public int getMinToWork(int workdayDuration){
-        if(workdayDuration < 12)
-            return 11;
-        else
-            return 36;
-    }
-
-    @Override
-    public int getLastClockDifferenceInSeconds(int id) {
-        Clock lastClock = getLastClock(id);
-
-        if (lastClock != null) {
-            Duration duration = Duration.between(lastClock.getClock(), LocalDateTime.now());
-            return (int) duration.toSeconds();
-        }
-
-        return 0;
+        return clockList;
     }
 
     @Override
@@ -210,156 +225,6 @@ public class ScanWaveDB implements IScanWaveDB {
         }
 
         return id;
-    }
-
-    @Override
-    public int getWorkdayDuration(int id) {
-        Statement statement = null;
-        ResultSet resultSet = null;
-        int duration = 0;
-
-        try {
-            statement = db.createStatement();
-            resultSet = statement.executeQuery("SELECT workday_duration FROM employees WHERE id=" + id);
-
-            if(!resultSet.next()) {
-                statement.close();
-                resultSet.close();
-                return duration;
-            }
-
-            duration = resultSet.getInt("workday_duration");
-
-            statement.close();
-            resultSet.close();
-
-            return duration;
-        } catch(RuntimeException | SQLException e){
-            e.printStackTrace();
-        }
-
-        return duration;
-    }
-
-    @Override
-    public int getJobIdById(int id){
-        Statement statement = null;
-        ResultSet resultSet = null;
-        int job_id = 0;
-
-        try {
-            statement = db.createStatement();
-            resultSet = statement.executeQuery("SELECT job_id FROM employees WHERE id=" + id);
-
-            if(!resultSet.next()) {
-                statement.close();
-                resultSet.close();
-                return job_id;
-            }
-
-            job_id = resultSet.getInt("job_id");
-
-            statement.close();
-            resultSet.close();
-
-            return job_id;
-        } catch(RuntimeException | SQLException e){
-            e.printStackTrace();
-        }
-
-        return job_id;
-    }
-
-    public EmployeeModel getEmployee(int id){
-        Statement statement = null;
-        ResultSet resultSet = null;
-        EmployeeModel employee = new EmployeeModel();
-
-        try {
-            statement = db.createStatement();
-            resultSet = statement.executeQuery(
-                    "SELECT name, job_name FROM employees" + "\n" +
-                            "INNER JOIN jobs ON employees.job_id = jobs.id" + "\n" +
-                            "WHERE employees.id = " + id
-            );
-
-            if(!resultSet.next()) {
-                statement.close();
-                resultSet.close();
-                return employee;
-            }
-
-            employee.setId(id);
-            employee.setName(resultSet.getString("name"));
-            employee.setCareer(resultSet.getString("job_name"));
-
-            statement.close();
-            resultSet.close();
-
-            return employee;
-        } catch(RuntimeException | SQLException e){
-            e.printStackTrace();
-        }
-
-        return employee;
-    }
-
-    @Override
-    public String getJobById(int id) {
-        Statement statement = null;
-        ResultSet resultSet = null;
-        String career = "Career";
-
-        try {
-            statement = db.createStatement();
-            resultSet = statement.executeQuery("SELECT job_name FROM jobs WHERE id=" + getJobIdById(id));
-
-            if(!resultSet.next()) {
-                statement.close();
-                resultSet.close();
-                return career;
-            }
-
-            career = resultSet.getString("job_name");
-
-            statement.close();
-            resultSet.close();
-
-            return career;
-        } catch(RuntimeException | SQLException e){
-            e.printStackTrace();
-        }
-
-        return career;
-    }
-
-    @Override
-    public String getName(int id) {
-        Statement statement = null;
-        ResultSet resultSet = null;
-        String user = "User";
-
-        try {
-            statement = db.createStatement();
-            resultSet = statement.executeQuery("SELECT name FROM employees WHERE id=" + id);
-
-            if(!resultSet.next()) {
-                statement.close();
-                resultSet.close();
-                return user;
-            }
-
-            user = resultSet.getString("name");
-
-            statement.close();
-            resultSet.close();
-
-            return user;
-        } catch(RuntimeException | SQLException e){
-            e.printStackTrace();
-        }
-
-        return user;
     }
 
     @Override
