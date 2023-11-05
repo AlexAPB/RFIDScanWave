@@ -45,6 +45,5 @@ public class SQLUtil implements Runnable {
 
         scene.setRoot(view.getInterface().getRoot());
         view.getInterface().getRoot().setDisable(false);
-        view.getRFID().getRfidField().requestFocus();
     }
 }

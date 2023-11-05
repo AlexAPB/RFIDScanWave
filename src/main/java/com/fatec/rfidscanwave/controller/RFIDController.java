@@ -83,7 +83,7 @@ public class RFIDController {
         int id = db.getIdByRFID(rfid);
         InterfaceCommand.Command command = null;
         EmployeeModel employee = db.getEmployee(id);
-        ClockDayModel lastClock = employee.getClockList().get(employee.getClockList().size() - 1);
+        ClockDayModel lastClock = employee.getClockList().get(0);
 
         setProcessingRFID(true);
 
@@ -108,6 +108,22 @@ public class RFIDController {
         LocalDateTime localClockOut = localClockIn == null ? null : LocalDateTime
                 .from(localClockIn)
                 .plus(employee.getShift().getWorkdayDuration());
+
+        if(lastClock.getClockIn() != null){
+            System.out.println("ClockIn " + lastClock.getClockIn().getDate().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) + " " + lastClock.getClockIn().getTime().format(DateTimeFormatter.ofPattern("HH:mm")));
+        }
+
+        if(lastClock.getLunchOut() != null){
+            System.out.println("LunchOut " + lastClock.getLunchOut().getDate().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) + " " + lastClock.getLunchOut().getTime().format(DateTimeFormatter.ofPattern("HH:mm")));
+        }
+
+        if(lastClock.getLunchReturn() != null){
+            System.out.println("LunchReturn " + lastClock.getLunchReturn().getDate().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) + " " + lastClock.getLunchReturn().getTime().format(DateTimeFormatter.ofPattern("HH:mm")));
+        }
+
+        if(lastClock.getClockOut() != null){
+            System.out.println("ClockOut " + lastClock.getClockOut().getDate().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) + " " + lastClock.getClockOut().getTime().format(DateTimeFormatter.ofPattern("HH:mm")));
+        }
 
         switch (lastClock.getLastState()){
             case CLOCK_IN -> {
@@ -243,7 +259,6 @@ public class RFIDController {
         }
 
         if(nextClock.getState() == CLOCK_IN){
-            System.out.println("Entrando com clock in!");
             db.clock(id, employee, nextClock);
         } else if(nextClock.getState() != UNDEFINED){
             db.updateClock(id, nextClock);

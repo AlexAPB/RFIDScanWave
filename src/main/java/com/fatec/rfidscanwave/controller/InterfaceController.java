@@ -91,7 +91,7 @@ public class InterfaceController {
                             @Override
                             public void handle(ActionEvent event) {
                                 displayUser(true);
-                                loadUserInformation(id, employee.getClockList().get(employee.getClockList().size() - 1));
+                                loadUserInformation(id, employee.getClockList().get(0));
                             }
                         }
                 );
